@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Quantum Factory Tycoon — Neural Energy Flow</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#05070f">
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  width:100%;height:100%;overflow:hidden;
+  font-family:system-ui,Segoe UI,sans-serif;
+  background:#05070f;color:#e8faff;
+}
+
+/* === NEBULA BACKGROUND === */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(0,255,255,.08), transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(140,0,255,.08), transparent 45%),
+    radial-gradient(circle at center, #02030a, #000 80%);
+}
+
+/* === CANVAS === */
+#gameCanvas{position:fixed;inset:0}
+
+/* === HUD === */
+.hud{
+  position:fixed;padding:10px 14px;border-radius:14px;
+  background:linear-gradient(145deg,rgba(0,255,255,.08),rgba(0,100,255,.02));
+  backdrop-filter:blur(18px);
+  border:1px solid rgba(0,255,255,.25);
+  box-shadow:0 0 20px rgba(0,255,255,.15), inset 0 0 20px rgba(255,255,255,.03);
+  font-size:13px;
+}
+#tl{top:12px;left:12px}
+#tr{top:12px;right:12px;text-align:right}
+#bl{bottom:12px;left:12px}
+#br{bottom:12px;right:12px}
+.label{font-size:10px;opacity:.6}
+.value{font-size:16px;font-weight:600;color:#7ffcff}
+</style>
+</head>
+
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="tl" class="hud">
+  <div class="label">RESSOURCES</div>
+  <div class="value">🧱 <span id="matter">0</span></div>
+  <div class="value">⚡ <span id="energy">0</span></div>
+</div>
+<div id="tr" class="hud">
+  <div class="label">PROGRESSION</div>
+  <div class="value">NIV <span id="level">1</span></div>
+</div>
+<div id="bl" class="hud">
+  <div class="label">SYSTÈME</div>
+  <div class="value">⏱ <span id="time">0</span>s</div>
+</div>
+<div id="br" class="hud">
+  <div class="label">ENTROPIE</div>
+  <div class="value">🌪 <span id="entropy">0</span>%</div>
+</div>
+
+<script>
+/* =========================================================
+   === CANVAS ==============================================
+========================================================= */
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight}
+addEventListener("resize",resize);resize();
+
+/* =========================================================
+   === GAME DATA ===========================================
+========================================================= */
+const GRID=12, CELL=56;
+const RES={matter:{t:0,r:0},energy:{t:0,r:0},entropy:0};
+const MACH={extractor:{m:1,e:0,c:"#00ffff"},generator:{m:0,e:2,c:"#ffcc00"}};
+const game={grid:Array(GRID*GRID).fill(null),lvl:1,time:0,last:performance.now()};
+
+/* =========================================================
+   === INPUT ===============================================
+========================================================= */
+canvas.addEventListener("click",e=>{
+  const r=canvas.getBoundingClientRect();
+  const x=Math.floor((e.clientX-r.left)/CELL);
+  const y=Math.floor((e.clientY-r.top)/CELL);
+  const i=y*GRID+x;
+  if(!game.grid[i]) game.grid[i]={t:"extractor"};
+});
+
+/* =========================================================
+   === PARTICLES ===========================================
+========================================================= */
+const particles=[];
+for(let i=0;i<120;i++){
+  particles.push({
+    x:Math.random()*innerWidth,
+    y:Math.random()*innerHeight,
+    vx:(Math.random()-.5)*0.2,
+    vy:(Math.random()-.5)*0.2,
+    a:Math.random()
+  });
+}
+
+/* =========================================================
+   === SIMULATION ==========================================
+========================================================= */
+function update(dt){
+  RES.matter.r=0;RES.energy.r=0;
+  game.grid.forEach(c=>{
+    if(!c)return;
+    const m=MACH[c.t];
+    RES.matter.r+=m.m;
+    RES.energy.r+=m.e;
+  });
+  RES.matter.t+=RES.matter.r*dt;
+  RES.energy.t+=RES.energy.r*dt;
+  RES.entropy=Math.min(100,RES.entropy+dt*game.grid.filter(Boolean).length*.05);
+}
+
+/* =========================================================
+   === RENDER ==============================================
+========================================================= */
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  /* --- Particules --- */
+  ctx.fillStyle="#7ffcff";
+  particles.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0)p.x=canvas.width;if(p.x>canvas.width)p.x=0;
+    if(p.y<0)p.y=canvas.height;if(p.y>canvas.height)p.y=0;
+    ctx.globalAlpha=.15+p.a*.3;
+    ctx.beginPath();ctx.arc(p.x,p.y,1.5,0,Math.PI*2);ctx.fill();
+  });
+  ctx.globalAlpha=1;
+
+  /* --- Grid --- */
+  ctx.strokeStyle="rgba(255,255,255,.03)";
+  for(let i=0;i<=GRID;i++){
+    ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,GRID*CELL);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,i*CELL);ctx.lineTo(GRID*CELL,i*CELL);ctx.stroke();
+  }
+
+  /* --- Machines + Flux --- */
+  const active=[];
+  game.grid.forEach((c,i)=>{
+    if(!c)return;
+    const x=i%GRID,y=(i/GRID)|0;
+    const cx=x*CELL+CELL/2,cy=y*CELL+CELL/2;
+    active.push({cx,cy,c});
+    ctx.fillStyle=MACH[c.t].c;
+    ctx.shadowColor=MACH[c.t].c;
+    ctx.shadowBlur=24;
+    ctx.fillRect(x*CELL+10,y*CELL+10,CELL-20,CELL-20);
+    ctx.shadowBlur=0;
+  });
+
+  /* --- Flux énergétiques --- */
+  ctx.strokeStyle="rgba(0,255,255,.25)";
+  active.forEach((a,i)=>{
+    const b=active[i+1];
+    if(!b)return;
+    ctx.beginPath();
+    ctx.moveTo(a.cx,a.cy);
+    ctx.lineTo(b.cx,b.cy);
+    ctx.stroke();
+  });
+}
+
+/* =========================================================
+   === UI ==============================================
+========================================================= */
+function ui(){
+  matter.textContent=RES.matter.t.toFixed(1);
+  energy.textContent=RES.energy.t.toFixed(1);
+  entropy.textContent=RES.entropy.toFixed(0);
+  level.textContent=game.lvl;
+  time.textContent=game.time|0;
+}
+
+/* =========================================================
+   === LOOP ================================================
+========================================================= */
+function loop(t){
+  const dt=(t-game.last)/1000;game.last=t;game.time+=dt;
+  update(dt);draw();ui();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
